@@ -1,17 +1,27 @@
-﻿using System;
+﻿using MVVMUtilities.Abstractions;
+using MVVMUtilities.Core;
+using MVVMUtilities.Exceptions;
+using System;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using System.Windows;
-using VideoSnapshoter.Core;
+using System.Windows.Threading;
 using VideoSnapshoter.Models;
-using VideoSnapshoter.Models.Exceptions;
-using VideoSnapshoter.Models.Logics;
+using VideoSnapshoter.Models.Abstractions;
+using VideoSnapshoter.Models.Extensions;
 using VideoSnapshoter.Models.Services;
 
 namespace VideoSnapshoter.ViewModels
 {
-    public class MainViewModel : ObservableObject
+    public class MainViewModel : BaseViewModel
     {
+        #region DI
+        private readonly IFileDialogService<FileOpenAction> fileOpenService;
+        private readonly IFileDialogService<FileSaveAction> fileSaveService;
+        private readonly IDialogService dialogService;
+        private readonly ISnapshotService snapshotService;
+        #endregion
+        #region DataBindings
         private Uri uri;
         public Uri VideoUri
         {
@@ -64,7 +74,7 @@ namespace VideoSnapshoter.ViewModels
                 }
             }
         }
-        private bool isselectedsnapshot; 
+        private bool isselectedsnapshot;
         public bool IsSelectedSnapshot
         {
             get => isselectedsnapshot;
@@ -77,57 +87,63 @@ namespace VideoSnapshoter.ViewModels
                 }
             }
         }
-        
-        public RelayCommand<object> ChooseVideoFile { get; init; }
+        #endregion
+        #region Commands
+        public RelayCommand ChooseVideoFile { get; init; }
         public RelayCommand<FrameworkElement> TakeSnapshot { get; init; }
-        public RelayCommand<object> MediaOpened { get; init; }
-        public RelayCommand<object> MediaFailed { get; init; }
-        public RelayCommand<object> SnapshotSelectionChanged { get; init; }
-        public RelayCommand<object> SnapshotSave { get; init; }
+        public RelayCommand MediaOpened { get; init; }
+        public RelayCommand MediaFailed { get; init; }
+        public RelayCommand SnapshotSelectionChanged { get; init; }
+        public RelayCommand SnapshotSave { get; init; }
+        #endregion
 
-        public MainViewModel() 
+        public MainViewModel(IFileDialogService<FileOpenAction> fileOpenService, IFileDialogService<FileSaveAction> fileSaveService,
+            IDialogService dialogService, ISnapshotService snapshotService) 
         {
-            MediaOpened = new RelayCommand<object>((i) => IsVideoLoaded = true);
-            MediaFailed = new RelayCommand<object>((i) => IsVideoLoaded = false);
-            SnapshotSelectionChanged = new RelayCommand<object>((i) => IsSelectedSnapshot = SelectedSnapshot != null);
-            ChooseVideoFile = new RelayCommand<object>(
-                async (i) =>
+            this.fileOpenService = fileOpenService;
+            this.fileSaveService = fileSaveService;
+            this.dialogService = dialogService;
+            this.snapshotService = snapshotService;
+            MediaOpened = new RelayCommand(()=> IsVideoLoaded = true);
+            MediaFailed = new RelayCommand(()=> IsVideoLoaded = false);
+            SnapshotSelectionChanged = new RelayCommand(() => IsSelectedSnapshot = SelectedSnapshot != null);
+            ChooseVideoFile = new RelayCommand(
+                async () =>
                 {
-                    var dialogService = new OpenFileDialogService("Видео", "*.mp4");
                     try
                     {
-                        VideoUri = new Uri(dialogService.GetFileName());
-                        await Task.Delay(1);
+                        await Dispatcher.CurrentDispatcher.InvokeAsync(()=>VideoUri = new Uri(fileOpenService.GetFileName()));
                     }
                     catch (FileNotChooseException ex)
                     {
-                        MessageBox.Show(ex.Message, "Информация", MessageBoxButton.OK, MessageBoxImage.Information);
+                        dialogService.ShowErrorMessage(ex.Message, "Ошибка");
                     }                   
                 });
             TakeSnapshot = new RelayCommand<FrameworkElement>(
                 async (FrameworkElement element) =>
                 {
-                    Snapshots.Add(new Snapshot
+                    await Dispatcher.CurrentDispatcher.InvokeAsync(() =>
                     {
-                        DateTimeString = DateTime.Now.ToString("ddMMyyyy HH:mm:ss"),
-                        SnapshotOriginal = Snapshoter.MakeSnapshot(element),
-                        Image = BitmapResizerService.Resize(Snapshoter.MakeSnapshot(element),
-                            newHeight:200, newWidth:300)
-                    }); 
-                    await Task.Delay(1);
+                        var snapshot = snapshotService.MakeSnapshot(element);
+                        Snapshots.Add(new Snapshot
+                        {
+                            DateTimeString = DateTime.Now.ToString("ddMMyyyy HH:mm:ss"),
+                            SnapshotOriginal = snapshot,
+                            Image = BitmapExtensions.Resize(snapshot, newHeight: 200, newWidth: 300)
+                        });
+                    });
                 });
-            SnapshotSave = new RelayCommand<object>(
-                async (i) =>
+            SnapshotSave = new RelayCommand(
+                async () =>
                 {
                     try
                     {
-                        var dialogService = new SaveFileDialogService("Изображение","*.png");
-                        ImageFileCreator.Save(SelectedSnapshot, dialogService.GetFileName());
-                        await Task.Delay(1);
+                        await Dispatcher.CurrentDispatcher.InvokeAsync(()=>
+                            SelectedSnapshot.SnapshotOriginal.Save(fileSaveService.GetFileName()));
                     }
                     catch (FileNotChooseException ex)
                     {
-                        MessageBox.Show(ex.Message, "Информация", MessageBoxButton.OK, MessageBoxImage.Information);               
+                        dialogService.ShowErrorMessage(ex.Message, "Ошибка");
                     }
                 });
         }

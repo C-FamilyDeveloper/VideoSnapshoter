@@ -8,9 +8,6 @@
         xmlns:behaviors="http://schemas.microsoft.com/xaml/behaviors"
         mc:Ignorable="d"
         Title="VideoSnapshoter" Height="763" Width="908">
-    <Window.DataContext>
-        <viewmodel:MainViewModel></viewmodel:MainViewModel>
-    </Window.DataContext>
     <Grid>
         <MediaElement x:Name="Video"  Stretch="UniformToFill" IsEnabled="{Binding IsVideoLoaded}" LoadedBehavior="Play"
                       Source="{Binding VideoUri}" 
